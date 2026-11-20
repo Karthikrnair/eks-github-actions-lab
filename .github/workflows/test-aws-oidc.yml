@@ -1,5 +1,5 @@
 
-name: Test AWS OIDC Authentication
+name: Test GitHub Actions EKS Access
 
 on:
   workflow_dispatch:
@@ -9,71 +9,67 @@ permissions:
   contents: read
 
 jobs:
-  test-aws-auth:
+  test-eks-access:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repository
+      # Step 1: Checkout GitHub repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Display GitHub execution context
-      - name: Display GitHub context
-        run: |
-          echo "Repository: $GITHUB_REPOSITORY"
-          echo "Branch: $GITHUB_REF"
-          echo "Event: $GITHUB_EVENT_NAME"
-
-      # Step 3: Inspect actual OIDC claims
-      - name: Inspect GitHub OIDC claims
-        shell: bash
-        run: |
-          TOKEN=$(curl -sSf \
-            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
-            | jq -r '.value')
-
-          PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f2 | tr '_-' '/+')
-          PADDING=$(( (4 - ${#PAYLOAD} % 4) % 4 ))
-          PAYLOAD="${PAYLOAD}$(printf '%*s' "$PADDING" '' | tr ' ' '=')"
-
-          echo "GitHub OIDC Claims:"
-          echo "$PAYLOAD" | base64 -d | jq '{
-            sub,
-            aud,
-            iss
-          }'
-
-      # Step 4: Assume AWS IAM role using OIDC
+      # Step 2: Configure AWS credentials using OIDC
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::012793737645:role/GitHubActions-EKS-Deploy
           aws-region: ap-south-1
+          role-session-name: GitHubActionsEKS
 
-      # Step 5: Verify AWS identity
+      # Step 3: Verify AWS identity
       - name: Verify AWS identity
-        run: aws sts get-caller-identity
-
-      # Step 6: Verify EKS cluster
-      - name: Verify EKS cluster access
         run: |
-              - name: Configure kubectl for EKS
-        run: |
-          aws eks update-kubeconfig \
-            --name sandbox-demo \
-            --region ap-south-1
+          aws sts get-caller-identity
 
-      - name: Verify Kubernetes permissions
+      # Step 4: Verify EKS cluster
+      - name: Verify EKS cluster
         run: |
-          echo "Checking namespace access..."
-          kubectl auth can-i create deployments \
-            --namespace opa-lab
-
-          echo "Checking existing deployments..."
-          kubectl get deployments -n opa-lab
           aws eks describe-cluster \
             --name sandbox-demo \
             --region ap-south-1 \
             --query "cluster.{Name:name,Status:status}" \
             --output table
+
+      # Step 5: Configure Kubernetes access
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name sandbox-demo \
+            --region ap-south-1
+
+      # Step 6: Verify namespace access
+      - name: Verify Kubernetes permissions
+        run: |
+          echo "Checking deployment creation permission..."
+
+          kubectl auth can-i create deployments \
+            --namespace opa-lab
+
+          echo "Checking Pod creation permission..."
+
+          kubectl auth can-i create pods \
+            --namespace opa-lab
+
+          echo "Checking existing deployments..."
+
+          kubectl get deployments \
+            --namespace opa-lab
+
+      # Step 7: Verify Gatekeeper policy resources
+      - name: Verify Gatekeeper policies
+        run: |
+          echo "Checking Gatekeeper admission..."
+
+          kubectl auth can-i create pods \
+            --namespace opa-lab
+
+          echo "Gatekeeper admission enforcement will be tested during deployment."
