@@ -13,18 +13,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Step 2: Display GitHub execution context
+      - name: Display GitHub context
+        run: |
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Branch: $GITHUB_REF"
+          echo "Event: $GITHUB_EVENT_NAME"
+
+      # Step 3: Inspect actual OIDC claims
+      - name: Inspect GitHub OIDC claims
+        shell: bash
+        run: |
+          TOKEN=$(curl -sSf \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" \
+            | jq -r '.value')
+
+          PAYLOAD=$(echo "$TOKEN" | cut -d '.' -f2 | tr '_-' '/+')
+          PADDING=$(( (4 - ${#PAYLOAD} % 4) % 4 ))
+          PAYLOAD="${PAYLOAD}$(printf '%*s' "$PADDING" '' | tr ' ' '=')"
+
+          echo "GitHub OIDC Claims:"
+          echo "$PAYLOAD" | base64 -d | jq '{
+            sub,
+            aud,
+            iss
+          }'
+
+      # Step 4: Assume AWS IAM role using OIDC
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::012793737645:role/GitHubActions-EKS-Deploy
           aws-region: ap-south-1
 
+      # Step 5: Verify AWS identity
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
+      # Step 6: Verify EKS cluster
       - name: Verify EKS cluster access
         run: |
           aws eks describe-cluster \
