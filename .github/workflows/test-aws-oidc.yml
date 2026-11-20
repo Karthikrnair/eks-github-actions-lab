@@ -58,6 +58,20 @@ jobs:
       # Step 6: Verify EKS cluster
       - name: Verify EKS cluster access
         run: |
+              - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name sandbox-demo \
+            --region ap-south-1
+
+      - name: Verify Kubernetes permissions
+        run: |
+          echo "Checking namespace access..."
+          kubectl auth can-i create deployments \
+            --namespace opa-lab
+
+          echo "Checking existing deployments..."
+          kubectl get deployments -n opa-lab
           aws eks describe-cluster \
             --name sandbox-demo \
             --region ap-south-1 \
