@@ -1,0 +1,94 @@
+
+name: Test EKS OPA Gatekeeper
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  test-gatekeeper:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::012793737645:role/GitHubActions-EKS-Deploy
+          aws-region: ap-south-1
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Configure EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name sandbox-demo \
+            --region ap-south-1
+
+      - name: Verify Kubernetes access
+        run: |
+          kubectl auth can-i create deployments -n opa-lab
+          kubectl get deployments -n opa-lab
+
+      - name: Create noncompliant application
+        run: |
+          cat > noncompliant-app.yaml <<'EOF'
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: nginx-noncompliant
+            namespace: opa-lab
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: nginx-noncompliant
+            template:
+              metadata:
+                labels:
+                  app: nginx-noncompliant
+              spec:
+                containers:
+                  - name: nginx
+                    image: nginx:stable
+                    ports:
+                      - containerPort: 80
+          EOF
+
+      - name: Deploy noncompliant application
+        run: |
+          kubectl apply -f noncompliant-app.yaml
+
+      - name: Verify Gatekeeper enforcement
+        run: |
+          echo "Waiting for admission evaluation..."
+          sleep 15
+
+          echo "Deployment status:"
+          kubectl get deployments -n opa-lab
+
+          echo "Deployment events:"
+          kubectl describe deployment nginx-noncompliant \
+            -n opa-lab
+
+          echo "Checking Gatekeeper rejection..."
+
+          EVENTS=$(kubectl get events \
+            -n opa-lab \
+            --field-selector reason=FailedCreate \
+            -o jsonpath='{range .items[*]}{.message}{"\n"}{end}')
+
+          echo "$EVENTS"
+
+          if echo "$EVENTS" | grep -qi 'gatekeeper'; then
+            echo "SUCCESS: Gatekeeper rejected the Pod."
+          else
+            echo "FAILED: No Gatekeeper rejection detected."
+            exit 1
+          fi
