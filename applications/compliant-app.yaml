@@ -1,0 +1,42 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-compliant
+  namespace: opa-lab
+  labels:
+    app: nginx-compliant
+    owner: platform-team
+    team: cloud-engineering
+    environment: lab
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: nginx-compliant
+
+  template:
+    metadata:
+      labels:
+        app: nginx-compliant
+        owner: platform-team
+        team: cloud-engineering
+        environment: lab
+
+    spec:
+      containers:
+        - name: nginx
+          image: 012793737645.dkr.ecr.ap-south-1.amazonaws.com/nginx-lab:latest
+
+          ports:
+            - containerPort: 80
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
