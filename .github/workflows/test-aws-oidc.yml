@@ -13,11 +13,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout GitHub repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Configure AWS credentials using OIDC
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -25,12 +23,10 @@ jobs:
           aws-region: ap-south-1
           role-session-name: GitHubActionsEKS
 
-      # Step 3: Verify AWS identity
       - name: Verify AWS identity
         run: |
           aws sts get-caller-identity
 
-      # Step 4: Verify EKS cluster
       - name: Verify EKS cluster
         run: |
           aws eks describe-cluster \
@@ -39,37 +35,33 @@ jobs:
             --query "cluster.{Name:name,Status:status}" \
             --output table
 
-      # Step 5: Configure Kubernetes access
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
             --name sandbox-demo \
             --region ap-south-1
 
-      # Step 6: Verify namespace access
       - name: Verify Kubernetes permissions
         run: |
-          echo "Checking deployment creation permission..."
+          echo "Checking deployment permission..."
+          kubectl auth can-i create deployments -n opa-lab
 
-          kubectl auth can-i create deployments \
-            --namespace opa-lab
+          echo "Checking Pod permission..."
+          kubectl auth can-i create pods -n opa-lab
 
-          echo "Checking Pod creation permission..."
+          echo "Checking deployments..."
+          kubectl get deployments -n opa-lab
 
-          kubectl auth can-i create pods \
-            --namespace opa-lab
-
-          echo "Checking existing deployments..."
-
-          kubectl get deployments \
-            --namespace opa-lab
-
-      # Step 7: Verify Gatekeeper policy resources
-      - name: Verify Gatekeeper policies
+      - name: Test OPA Gatekeeper admission
         run: |
-          echo "Checking Gatekeeper admission..."
+          echo "Testing noncompliant deployment..."
 
-          kubectl auth can-i create pods \
-            --namespace opa-lab
+          kubectl apply \
+            -f applications/noncompliant-app.yaml
 
-          echo "Gatekeeper admission enforcement will be tested during deployment."
+          echo "Checking deployment and Pod status..."
+          kubectl get deployments,pods -n opa-lab
+
+          echo "Checking deployment events..."
+          kubectl describe deployment \
+            nginx-noncompliant -n opa-lab
