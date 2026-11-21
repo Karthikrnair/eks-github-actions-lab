@@ -12,7 +12,6 @@ metadata:
 
 spec:
   replicas: 1
-
   selector:
     matchLabels:
       app: nginx-compliant
@@ -28,11 +27,9 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: image: 012793737645.dkr.ecr.ap-south-1.amazonaws.com/karthikecr:latest
-
+          image: 012793737645.dkr.ecr.ap-south-1.amazonaws.com/karthikecr:latest
           ports:
             - containerPort: 80
-
           resources:
             requests:
               cpu: "100m"
