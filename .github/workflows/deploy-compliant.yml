@@ -1,0 +1,54 @@
+
+name: Deploy Compliant App to EKS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-compliant:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::012793737645:role/GitHubActions-EKS-Deploy
+          aws-region: ap-south-1
+
+      - name: Configure EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name sandbox-demo \
+            --region ap-south-1
+
+      - name: Verify Kubernetes access
+        run: |
+          kubectl auth can-i create deployments -n opa-lab
+
+      - name: Deploy compliant application
+        run: |
+          kubectl apply -f applications/compliant-app.yaml
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/nginx-compliant \
+            -n opa-lab \
+            --timeout=180s
+
+          kubectl get deployments,pods -n opa-lab
+
+      - name: Inspect deployment on failure
+        if: failure()
+        run: |
+          kubectl describe deployment nginx-compliant \
+            -n opa-lab || true
+
+          kubectl get events -n opa-lab \
+            --sort-by=.metadata.creationTimestamp || true
