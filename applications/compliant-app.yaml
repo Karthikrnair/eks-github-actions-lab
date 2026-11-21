@@ -28,7 +28,7 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: 012793737645.dkr.ecr.ap-south-1.amazonaws.com/nginx-lab:latest
+          image: image: 012793737645.dkr.ecr.ap-south-1.amazonaws.com/karthikecr:latest
 
           ports:
             - containerPort: 80
