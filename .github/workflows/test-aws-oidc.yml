@@ -1,5 +1,5 @@
 
-name: Test GitHub Actions EKS Access
+name: Test EKS OPA Gatekeeper
 
 on:
   workflow_dispatch:
@@ -13,9 +13,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Authenticate to AWS using GitHub OIDC
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -23,10 +25,12 @@ jobs:
           aws-region: ap-south-1
           role-session-name: GitHubActionsEKS
 
+      # 3. Verify AWS identity
       - name: Verify AWS identity
         run: |
           aws sts get-caller-identity
 
+      # 4. Verify EKS cluster
       - name: Verify EKS cluster
         run: |
           aws eks describe-cluster \
@@ -35,33 +39,58 @@ jobs:
             --query "cluster.{Name:name,Status:status}" \
             --output table
 
+      # 5. Configure Kubernetes access
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
             --name sandbox-demo \
             --region ap-south-1
 
+      # 6. Verify Kubernetes authorization
       - name: Verify Kubernetes permissions
         run: |
-          echo "Checking deployment permission..."
           kubectl auth can-i create deployments -n opa-lab
-
-          echo "Checking Pod permission..."
           kubectl auth can-i create pods -n opa-lab
-
-          echo "Checking deployments..."
           kubectl get deployments -n opa-lab
 
-      - name: Test OPA Gatekeeper admission
+      # 7. Deploy intentionally noncompliant application
+      - name: Deploy noncompliant application
         run: |
-          echo "Testing noncompliant deployment..."
-
           kubectl apply \
             -f applications/noncompliant-app.yaml
 
-          echo "Checking deployment and Pod status..."
-          kubectl get deployments,pods -n opa-lab
+      # 8. Wait for admission and controller events
+      - name: Wait for Gatekeeper evaluation
+        run: |
+          sleep 15
 
-          echo "Checking deployment events..."
-          kubectl describe deployment \
-            nginx-noncompliant -n opa-lab
+      # 9. Inspect deployment status and events
+      - name: Verify Gatekeeper rejection
+        run: |
+          echo "Deployment status:"
+          kubectl get deployment nginx-noncompliant \
+            -n opa-lab
+
+          echo "Deployment events:"
+          kubectl describe deployment nginx-noncompliant \
+            -n opa-lab
+
+          echo "Pod status:"
+          kubectl get pods -n opa-lab
+
+          echo "Checking Gatekeeper denial events..."
+
+          EVENTS=$(kubectl get events \
+            -n opa-lab \
+            --field-selector reason=FailedCreate \
+            -o jsonpath='{range .items[*]}{.message}{"\n"}{end}')
+
+          echo "$EVENTS"
+
+          if echo "$EVENTS" | grep -qi \
+            'admission webhook.*gatekeeper'; then
+            echo "SUCCESS: Gatekeeper rejected Pod creation."
+          else
+            echo "FAILED: No Gatekeeper rejection found."
+            exit 1
+          fi
